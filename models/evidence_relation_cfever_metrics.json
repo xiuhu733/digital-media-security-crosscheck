@@ -1,0 +1,50 @@
+{
+  "dataset": "data/external/cfever/relation_training.jsonl",
+  "dataset_kind": "user_supplied",
+  "train_count": 21488,
+  "test_count": 5524,
+  "group_split": "sha256(group) mod 5",
+  "holdout": {
+    "count": 5524,
+    "accuracy": 0.673,
+    "macro_f1": 0.687,
+    "per_class": {
+      "supports": {
+        "precision": 0.7,
+        "recall": 0.625,
+        "f1": 0.66,
+        "support": 2433
+      },
+      "refutes": {
+        "precision": 0.503,
+        "recall": 0.565,
+        "f1": 0.532,
+        "support": 1681
+      },
+      "insufficient": {
+        "precision": 0.853,
+        "recall": 0.887,
+        "f1": 0.869,
+        "support": 1410
+      }
+    },
+    "confusion": {
+      "supports": {
+        "refutes": 838,
+        "insufficient": 75,
+        "supports": 1520
+      },
+      "refutes": {
+        "refutes": 950,
+        "insufficient": 141,
+        "supports": 590
+      },
+      "insufficient": {
+        "insufficient": 1250,
+        "supports": 60,
+        "refutes": 100
+      }
+    }
+  },
+  "limitation": "测试结果取决于输入数据的标注质量和分组方式；请另外保留来源级人工测试集。"
+}

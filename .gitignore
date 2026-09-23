@@ -1,0 +1,13 @@
+.venv/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+config.local.json
+*.py[cod]
+data/
+*.sqlite3
+*.sqlite3-*
+models/evidence_relation_cfever.json
+logs/

@@ -1,0 +1,44 @@
+{
+  "dataset": "/Users/xiuhu/课程/数字媒体安全/data/relation_training.jsonl",
+  "dataset_kind": "synthetic_starter",
+  "train_count": 112,
+  "test_count": 32,
+  "group_split": "sha256(group) mod 5",
+  "holdout": {
+    "count": 32,
+    "accuracy": 1.0,
+    "macro_f1": 1.0,
+    "per_class": {
+      "supports": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 8
+      },
+      "refutes": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 8
+      },
+      "insufficient": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 16
+      }
+    },
+    "confusion": {
+      "supports": {
+        "supports": 8
+      },
+      "refutes": {
+        "refutes": 8
+      },
+      "insufficient": {
+        "insufficient": 16
+      }
+    }
+  },
+  "limitation": "合成样本测试不能代表真实网页上的准确率；部署前需要人工标注的独立测试集。"
+}

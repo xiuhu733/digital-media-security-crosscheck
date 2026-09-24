@@ -22,6 +22,7 @@ from crosscheck.domain.ports import ContentProvider, SearchProvider
 
 from .errors import ProviderFailure
 from .evidence_analyzer import analyze_evidence, summarize_relation
+from .hybrid_evidence_analyzer import HybridEvidenceAnalyzer
 from .llm_analyzer import (
     LLMClaimAnalyzer,
     analyze_claim_prefer_llm,
@@ -41,7 +42,9 @@ class VerificationService:
         self.claim_analyzer = claim_analyzer if claim_analyzer is not None else llm_analyzer
         candidates = evidence_analyzer if evidence_analyzer is not None else llm_analyzer
         candidate_list = candidates if isinstance(candidates, list) else ([candidates] if candidates else [])
-        self.evidence_analyzer = candidates if candidate_list and all(hasattr(item, "analyze_evidence") for item in candidate_list) else None
+        self.evidence_analyzer = candidates if isinstance(candidates, HybridEvidenceAnalyzer) or (
+            candidate_list and all(hasattr(item, "analyze_evidence") for item in candidate_list)
+        ) else None
 
     async def _search(self, provider: SearchProvider, query: str, limit: int):
         start = time.monotonic()
@@ -165,7 +168,10 @@ class VerificationService:
         cluster_for_url = {url: cluster_id for cluster_id, urls in clusters.items() for url in urls}
         evidence = [item.model_copy(update={"source_cluster_id": cluster_for_url.get(str(item.url))}) for item in evidence]
         await self._progress(progress, "judge", "正在使用证据判定器判断关系…", 88)
-        evidence, evidence_analysis_method, evidence_warnings = await analyze_evidence_prefer_llm(claim, evidence, self.evidence_analyzer)
+        if isinstance(self.evidence_analyzer, HybridEvidenceAnalyzer):
+            evidence, evidence_analysis_method, evidence_warnings = await self.evidence_analyzer.analyze(claim, evidence)
+        else:
+            evidence, evidence_analysis_method, evidence_warnings = await analyze_evidence_prefer_llm(claim, evidence, self.evidence_analyzer)
         analysis_warnings.extend(evidence_warnings)
         conclusion, summary = summarize_relation(evidence)
         await self._progress(progress, "complete", "核验完成，正在保存报告", 97, conclusion=conclusion.value)

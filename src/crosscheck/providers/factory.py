@@ -1,4 +1,5 @@
 from crosscheck.config import Settings
+from crosscheck.services.hybrid_evidence_analyzer import HybridEvidenceAnalyzer
 from crosscheck.services.llm_analyzer import LLMClaimAnalyzer
 from crosscheck.services.local_relation_analyzer import LocalRelationAnalyzer
 
@@ -70,4 +71,9 @@ def build_evidence_analyzers(settings: Settings):
         return None
     if settings.evidence_analyzer == "local":
         return [LocalRelationAnalyzer(settings.local_relation_model_path)]
+    if settings.evidence_analyzer == "hybrid":
+        return HybridEvidenceAnalyzer(
+            LocalRelationAnalyzer(settings.local_relation_model_path),
+            build_llm_analyzer(settings),
+        )
     return build_llm_analyzer(settings)

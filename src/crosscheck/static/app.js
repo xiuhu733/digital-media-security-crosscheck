@@ -24,10 +24,11 @@ document.querySelectorAll('.nav-item').forEach(button => button.addEventListener
 
 const relationLabel = {refutes:'存在反驳', supports:'获得支持', conflicts:'证据冲突', insufficient:'证据不足'};
 function analysisMethodLabel(method) {
-  return ({'llm-primary': '主模型', 'llm-backup': '备用模型', llm: '大模型', rules: '规则'})[method] || '未知';
+  if (method?.startsWith('hybrid-local-')) return method.endsWith('backup') ? '本地模型 + 备用大模型' : '本地模型 + 大模型';
+  return ({'llm-primary': '主模型', 'llm-backup': '备用模型', llm: '大模型', 'local-relation-model': '本地训练模型', rules: '规则'})[method] || '未知';
 }
 function modelSucceeded(method) {
-  return ['llm', 'llm-primary', 'llm-backup'].includes(method);
+  return ['llm', 'llm-primary', 'llm-backup', 'local-relation-model'].includes(method) || method?.startsWith('hybrid-local-');
 }
 function visibleAnalysisWarnings(report) {
   // Older SQLite snapshots include failed attempts even after a successful fallback.

@@ -17,8 +17,8 @@
     document.querySelector('.status-dot').classList.add('ready');
     field('claim-analyzer').value = config.claim_analyzer || 'llm';
     field('claim-analyzer-state').textContent = ({rules:'规则解析', llm:'兼容接口模型'})[config.claim_analyzer] || config.claim_analyzer;
-    field('evidence-analyzer').value = config.evidence_analyzer || 'local';
-    field('evidence-analyzer-state').textContent = ({local:'本地训练模型', rules:'规则判断', llm:'兼容接口模型'})[config.evidence_analyzer] || config.evidence_analyzer;
+    field('evidence-analyzer').value = config.evidence_analyzer || 'hybrid';
+    field('evidence-analyzer-state').textContent = ({hybrid:'本地模型 + 大模型', local:'本地训练模型', rules:'规则判断', llm:'兼容接口模型'})[config.evidence_analyzer] || config.evidence_analyzer;
     for (const name of ['exa','firecrawl']) {
       field(`${name}-state`).textContent = config[`${name}_configured`] ? `已保存 · ${config[`${name}_api_key`]}` : '未配置';
     }

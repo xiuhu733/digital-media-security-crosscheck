@@ -45,7 +45,7 @@ class RuntimeConfigUpdate(BaseModel):
     backup_llm_api_url: HttpUrl = "https://api.openai.com/v1"
     backup_llm_model: str = "gpt-4o-mini"
     claim_analyzer: Literal["llm", "rules"] = "llm"
-    evidence_analyzer: Literal["local", "llm", "rules"] = "local"
+    evidence_analyzer: Literal["hybrid", "local", "llm", "rules"] = "hybrid"
     local_relation_model_path: str | None = None
 
 

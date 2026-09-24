@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     backup_llm_api_url: str = "https://api.openai.com/v1"
     backup_llm_model: str = "gpt-4o-mini"
     claim_analyzer: Literal["llm", "rules"] = "llm"
-    evidence_analyzer: Literal["local", "llm", "rules"] = "local"
+    evidence_analyzer: Literal["hybrid", "local", "llm", "rules"] = "hybrid"
     local_relation_model_path: Path = Path(__file__).resolve().parents[2] / "models" / "evidence_relation_cfever.json.gz"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

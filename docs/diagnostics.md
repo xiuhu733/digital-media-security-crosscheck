@@ -1,69 +1,69 @@
-# 排查核验失败和模型超时
+# Diagnose verification failures and model timeouts
 
-日志自动写入项目的 `logs/crosscheck-进程号.jsonl`，每行是一条 JSON 事件。重启或自动重载后会生成新进程的日志文件。日志从启用后开始记录，不能恢复以前没有保存的模型响应。
+The app writes one JSON event per line to `logs/crosscheck-<process-id>.jsonl`. Restarts and automatic reloads create a new process log. Logging cannot recover model responses from requests made before it was enabled.
 
-## 找到本次核验的日志
+## Find a verification in the logs
 
-报告编号与日志中的 `request_id` 对应。鼠标悬停在报告编号上可查看完整 ID；请求失败时页面也会显示诊断 ID。HTTP 响应头 `X-Request-ID` 提供相同的 ID。
+A report ID matches the `request_id` in log events. Hover over the report ID in the workspace to see the full value. Failed requests also show a diagnostic ID; the `X-Request-ID` HTTP response header provides the same value.
 
-在项目目录查看最近修改的文件：
+Find the most recently modified log files:
 
 ```bash
 ls -lt logs/
 ```
 
-按报告编号筛选（输入完整 ID 或报告显示的前 8 位）：
+Search by a full ID or the first eight characters shown in the report:
 
 ```bash
 read -r diagnostic_id
 rg -i -- "$diagnostic_id" logs/
 ```
 
-查找模型失败和规则回退：
+Find model failures and rule fallbacks:
 
 ```bash
 rg '"event": "(llm_request_failed|llm_attempt_failed|llm_rules_fallback|evidence_model_attempt_failed|evidence_model_rules_fallback)"' logs/
 ```
 
-| 事件 | 用途 |
+| Event | What it records |
 | --- | --- |
-| `http_request_started` / `http_request_finished` | HTTP 状态、请求总耗时、响应是否完整结束；SSE 的 200 不等于核验成功 |
-| `verification_started` / `verification_completed` / `verification_failed` | 核验总耗时、最终解析方式与证据判断方式 |
-| `verification_progress` / `stage_finished` | 当前阶段和相邻进度节点之间的耗时 |
-| `llm_request_started` | 模型名、主备角色、服务域名、实际超时秒数、输入字符数、是否存在代理环境变量 |
-| `llm_http_response` / `llm_response_shape` | HTTP 状态、响应耗时和大小、上游请求 ID、停止原因、内容类型与长度、可用的 token 用量 |
-| `llm_request_failed` | ReadTimeout、HTTP 错误、JSON 错误；格式失败时区分空内容、普通文本和类似 JSON 的内容 |
-| `llm_attempt_succeeded` / `llm_attempt_failed` | 单个模型最终是否完成解析/判断，是否使用了备用模型；JSON 解析成功后字段校验仍可能失败 |
-| `llm_rules_fallback` | 未配置模型或全部模型失败 |
-| `evidence_model_attempt_started` / `evidence_model_attempt_succeeded` / `evidence_model_attempt_failed` | 本地训练模型或兼容接口证据判定器的调用结果和耗时 |
-| `evidence_model_rules_fallback` | 证据判定器不可用，回退到规则判断 |
-| `provider_http_started` / `provider_http_response` | 搜索或抓取服务实际超时、HTTP 状态及等待响应头的耗时 |
-| `provider_succeeded` / `provider_failed` / `content_selected` | 检索结果数、正文长度、失败类型和最终选择的内容服务 |
-| `report_saved` / `report_save_failed` | 报告是否真正保存，写入耗时 |
+| `http_request_started` / `http_request_finished` | HTTP status, total request duration, and whether the response completed. An SSE status of 200 does not mean verification succeeded. |
+| `verification_started` / `verification_completed` / `verification_failed` | Total verification duration and final claim and evidence analysis methods. |
+| `verification_progress` / `stage_finished` | Current stage and elapsed time between progress updates. |
+| `llm_request_started` | Model name and role, endpoint host, effective timeout, input length, and whether proxy environment variables exist. |
+| `llm_http_response` / `llm_response_shape` | HTTP status, response time and size, upstream request ID, finish reason, content type and length, and available token usage. |
+| `llm_request_failed` | Timeouts, HTTP errors, and JSON errors; format failures distinguish empty, plain-text, and JSON-like content. |
+| `llm_attempt_succeeded` / `llm_attempt_failed` | Whether an individual model completed analysis and whether a backup was used. Field validation can fail even after JSON parsing succeeds. |
+| `llm_rules_fallback` | No model was configured or every model failed. |
+| `evidence_model_attempt_started` / `evidence_model_attempt_succeeded` / `evidence_model_attempt_failed` | Outcome and duration of the local classifier or another configured evidence analyzer. |
+| `evidence_model_rules_fallback` | Evidence analysis fell back to rules. |
+| `provider_http_started` / `provider_http_response` | Effective timeout, HTTP status, and time spent waiting for provider response headers. |
+| `provider_succeeded` / `provider_failed` / `content_selected` | Search result count, body length, failure type, and selected content provider. |
+| `report_saved` / `report_save_failed` | Whether the report was saved and how long it took. |
 
-每次模型 HTTP 调用还有独立的 `attempt_id`。并行抓取按 `provider` 和 `page_id` 区分。时间统一为 UTC，耗时单位为毫秒。`ReadTimeout` 表示等待读取响应数据超时，并不能单凭该异常断定是模型排队、网络还是代理故障；代理环境变量存在也不证明请求一定经过了代理。
+Each model HTTP call also has its own `attempt_id`. Parallel fetches are distinguished by `provider` and `page_id`. Timestamps use UTC and durations use milliseconds. A `ReadTimeout` alone does not identify whether the delay came from a model queue, the network, or a proxy. The presence of proxy environment variables does not prove that a request used a proxy.
 
-主模型失败、备用模型成功时，日志保留失败过程，页面只显示最终成功。只有全部模型失败才向页面返回回退警告。
+If the primary model fails and the backup succeeds, the logs retain the failed attempt while the workspace shows the final success. A fallback warning appears in the workspace only when all models fail.
 
-## 查看模型为什么没有返回 JSON
+## Inspect a model response that is not valid JSON
 
-默认不记录用户主张、网页正文、提示词、模型原文、请求头或上游错误正文。日志会记录响应长度、内容指纹、结束原因和异常代码位置，不保存异常的任意原始文本。
+By default, logs do not record user claims, page bodies, prompts, raw model responses, request headers, or upstream error bodies. They record response length, content fingerprint, finish reason, and exception location without storing arbitrary raw exception text.
 
-如果这些信息不足，可在项目 `.env` 中设置：
+If those fields are insufficient, set the following value in the project's `.env`:
 
 ```dotenv
 LOG_LLM_RESPONSE_PREVIEW=true
 ```
 
-重启服务并重新核验。JSON 提取失败时，`llm_request_failed.response_preview` 会保存最多 2000 字符的模型内容，`preview_truncated` 表示是否被截断。已配置的 API Key 和常见凭据格式会被替换为 `[REDACTED]`。此片段仍可能包含模型复述的业务内容，分享日志前应检查片段。排查结束后可设回 `false` 并重启。
+Restart the service and retry the verification. When JSON extraction fails, `llm_request_failed.response_preview` saves up to 2,000 characters of model output, and `preview_truncated` indicates whether it was shortened. Configured API keys and common credential formats are replaced with `[REDACTED]`. The preview may still contain business content repeated by the model, so inspect logs before sharing them. Set the option back to `false` and restart after troubleshooting.
 
-该开关不保存完整响应、不采集模型推理内容，也不改变模型调用、重试、超时或主备顺序。
+This option does not save complete responses or model reasoning content, and it does not change model calls, retries, timeouts, or primary/backup order.
 
-## 日志文件与保留范围
+## Log files and retention
 
-- 每个进程独立一个活动文件，达到约 5 MB 自动轮转，最多保留 3 个备份（`.1`、`.2`、`.3`）。
-- 自动重载产生的旧进程日志会保留；每个进程约 20 MB 的上限不等于整个目录的上限，可定期清理旧进程文件。
-- 文件权限为仅当前用户可读写；默认 `logs/` 已加入 `.gitignore`。
-- 通过 `.env` 的 `LOG_DIRECTORY` 可以指定其他目录，修改后需重启；目录必须可写。
+- Each process has one active file. At about 5 MB, it rotates through at most three backups (`.1`, `.2`, `.3`).
+- Logs from old processes remain after automatic reload. The roughly 20 MB per-process limit is not a limit on the entire directory; remove old process logs periodically if needed.
+- Only the current user can read or write the files. The default `logs/` directory is in `.gitignore`.
+- Set `LOG_DIRECTORY` in `.env` to use another writable directory, then restart the service.
 
-日志实现位于 [diagnostics.py](../src/crosscheck/diagnostics.py)。测试使用模拟模型和临时数据库，覆盖并发请求关联、HTTP/SSE 报告 ID、主备切换、超时、脱敏和文件轮转。
+Implementation: [diagnostics.py](../src/crosscheck/diagnostics.py). Tests use simulated models and a temporary database to cover concurrent request correlation, HTTP/SSE report IDs, primary/backup failover, timeouts, redaction, and file rotation.

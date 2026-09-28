@@ -1,8 +1,10 @@
-# 多源信息交叉验证系统
+# CrossCheck: multi-source fact verification
 
-模块化后端骨架，默认使用 mock 数据演示；配置 Firecrawl、Exa 后可切换真实检索。
+CrossCheck verifies Chinese-language claims against web evidence. It combines Exa and Firecrawl for source discovery and page retrieval, then uses rules, a locally trained classifier, and an optional OpenAI-compatible model to assess each source. The app runs with mock data out of the box.
 
-## 启动
+## Quick start
+
+Requires Python 3.11 or newer.
 
 ```bash
 python3 -m venv .venv
@@ -12,67 +14,68 @@ cp .env.example .env
 uvicorn crosscheck.main:app --reload
 ```
 
-打开 http://127.0.0.1:8000/docs 查看接口。
+Open <http://127.0.0.1:8000/> for the Chinese-language verification workspace or <http://127.0.0.1:8000/docs> for the API reference. FastAPI serves the interface directly; no separate frontend server is needed.
 
-打开 http://127.0.0.1:8000/ 查看中文核验工作台界面。界面由 FastAPI 直接提供，无需单独启动前端开发服务器。
+Submit a claim in the workspace to see live progress for claim parsing, parallel search, page retrieval, and evidence assessment. Scripts can use `POST /api/v1/verifications`; the workspace uses `POST /api/v1/verifications/stream` for progress events.
 
-提交核验后，页面会通过流式接口实时显示主张解析、并行搜索、页面抓取和证据比对进度；普通接口 `/api/v1/verifications` 仍保留，便于脚本调用。
+## Connect search and content providers
 
-点击左侧“来源管理”即可配置 Mock、Exa 和 Firecrawl：启用搜索后端、填写 API 地址和 API Key、选择正文抓取服务，然后点击“保存配置”。配置会保存到项目根目录的 `config.local.json`，该文件已加入 `.gitignore`；页面只显示 API Key 的掩码。保存后下一次核验立即使用新配置。
-
-## 配置真实供应商
+The default mock providers work without credentials. To use live sources, set the following values in `.env`:
 
 ```dotenv
 SEARCH_PROVIDERS=exa,firecrawl
 CONTENT_PROVIDER=firecrawl
-EXA_API_KEY=...
-FIRECRAWL_API_KEY=...
+EXA_API_KEY=your-exa-api-key
+FIRECRAWL_API_KEY=your-firecrawl-api-key
 ```
 
-搜索供应商只负责发现候选网页，正文由内容供应商获取；业务层不依赖具体供应商。
+Search providers discover candidate URLs. Content providers retrieve page bodies for selected URLs; search snippets are not used as the final evidence. When both Exa and Firecrawl have credentials, the app retrieves content from both in parallel. It prefers the content provider selected in the workspace and falls back to the other if needed. Successful providers and failures are recorded in the evidence metadata.
 
-当 Exa 和 Firecrawl 都配置了密钥时，正文会并行从两个服务获取：默认优先使用页面配置中选择的服务，另一个成功结果会记录在证据元数据中；首选服务失败时自动回退到另一个服务。
+You can also open **Source management** (`来源管理`) in the workspace to enable providers, set API URLs and keys, choose the content provider, and save the configuration. Changes apply to the next verification. Settings are stored in `config.local.json`, which is excluded from Git; the page displays masked API keys.
 
-来源管理页面还可以配置一个 OpenAI 兼容的大模型。配置后，大模型负责把自然语言主张拆解为主体、对象、行为、事件、时间、地点、数量和范围；调用失败时自动回退到规则解析，并在报告中标明解析方式。
+## Choose claim and evidence analyzers
 
-同时可以配置备用语言模型。系统先调用主模型，主模型超时、返回错误或输出无法解析时自动调用备用模型；两者都失败才使用规则解析。
+Source management offers independent settings for claim parsing and evidence assessment. The default selections are an OpenAI-compatible model for claim parsing and **local model + LLM** for evidence assessment. Add primary and optional backup model credentials in the workspace. If the primary model times out, fails, or returns an unusable response, the backup is tried before rules are used. Reports record the method used and any fallback warnings.
 
-“来源管理”可以分别选择主张解析器和证据判定器。默认主张解析使用兼容接口模型，证据判定使用“本地模型 + 大模型”模式。默认本地模型为压缩的 CFEVER 训练模型 `models/evidence_relation_cfever.json.gz`。训练数据放在 `data/relation_training.jsonl`，模型和评估结果放在 `models/`。
+For each retrieved page, rules first compare the claim with the content, including its subject, year, scope, and key quantities. In hybrid mode, the local classifier and the LLM independently classify the evidence as `supports`, `refutes`, or `insufficient`. Agreement is kept; disagreement becomes `insufficient` with both reasons shown for review. If one model is unavailable, the other is used; if both are unavailable, the rule result is used. Hybrid mode makes LLM requests during evidence assessment. You can select local-only, LLM-only, or rules-only assessment in the workspace.
 
-混合模式会让本地模型和兼容接口大模型独立判断每条证据：两者一致时保留该关系，分歧时标为“证据不足”并在证据理由中展示双方判断。任一模型不可用时使用另一方，并在报告中提示；两者都不可用时回退规则判断。证据判定器也可在页面单独切换为本地模型、大模型或规则模式。混合模式会产生证据判定阶段的大模型请求。
+The local classifier is a three-class linear model implemented in this project. Its features include Chinese character 2/3-grams, claim–evidence overlap, subject/time/object/action matches, number differences, and negation terms. It learns its weights through online gradient updates without pretrained embeddings or a third-party machine-learning runtime. At inference time, rule checks and a confidence threshold prevent some unsafe changes to the initial decision.
 
-训练或重新训练：
+## Train the local classifier
+
+The configured default model is the compressed CFEVER-trained file `models/evidence_relation_cfever.json.gz`. The synthetic starter dataset lives at `data/relation_training.jsonl` when generated locally; `data/` is excluded from Git. To create that starter dataset and train a baseline model:
 
 ```bash
 python -m crosscheck.ml.train --create-starter-data
 ```
 
-本地模型是项目内从零实现的多分类线性模型：用中文字符 2/3-gram、主张与证据的重叠程度、主体/时间/对象/行为是否出现、数量差异和否定词等特征，经过在线梯度更新学习 `supports`、`refutes`、`insufficient` 三类。运行时不会加载预训练词向量、第三方 NLP 模型或机器学习运行库。规则分析先做主体、年份和关键数量的安全检查，模型只在证据没有明显硬冲突且置信度达到阈值时改变关系。
-
-替换为人工标注数据时，每行 JSONL 至少包含：
+For your own labeled data, provide one JSON object per line with at least these fields:
 
 ```json
-{"claim":"上海市2026年所有电动自行车上路","evidence":"政策原文……","label":"refutes","group":"source-001"}
+{"claim":"上海市2026年禁止所有电动自行车上路","evidence":"上海市2026年政策仅限制部分道路的电动自行车通行，并未全面禁行。","label":"refutes","group":"source-001"}
 ```
 
-`label` 只能是 `supports`、`refutes` 或 `insufficient`；同一来源或同一事件应使用相同的 `group`，训练脚本会按 group 划分测试集，避免同一来源同时出现在训练和测试中。
+`label` must be `supports`, `refutes`, or `insufficient`. Give claims from the same source or event the same `group`; the training script uses groups to split training and holdout samples. Run `python -m crosscheck.ml.train --help` to see the data, model, and report path options.
 
-默认样本是可运行基线，不代表真实网页准确率。部署前应替换为人工标注的主张—证据数据，并按 `group` 划分训练集和测试集。
+Synthetic starter results do not measure accuracy on live web pages. The CFEVER model was trained on Chinese claims and Wikipedia evidence sentences; some `insufficient` examples use constructed negative evidence. See [CFEVER data and training](docs/cfever-data.md) for the import workflow, evaluation, and limitations. Use independently labeled claim–evidence pairs to assess performance in your target setting.
 
-项目还提供了 CFEVER 中文事实核查数据的导入说明，见 [`data/external/cfever/README.md`](data/external/cfever/README.md)。导入后的数据包含真实中文主张和 Wikipedia 证据句，可使用 `crosscheck.ml.train` 单独训练和评估；其中 CFEVER 的证据不足样本需要构造负例，不能直接当作完全人工标注数据。
+## Troubleshoot verification
 
-## 排查问题
+Diagnostic events are written to `logs/crosscheck-<process-id>.jsonl`. They include request IDs, stage durations, provider and model failures, and fallback decisions. Report IDs map to log request IDs. By default, logs do not store claims, page bodies, or raw model responses.
 
-诊断日志自动保存到 `logs/crosscheck-进程号.jsonl`，记录请求 ID、阶段耗时、模型主备切换、HTTP 状态和失败原因。报告编号对应日志中的请求 ID；默认不保存主张、正文或模型原文。
+See [diagnostics](docs/diagnostics.md) to find a verification, investigate timeouts, and temporarily enable a redacted model-response preview.
 
-查看 [日志排查说明](docs/diagnostics.md)，了解如何筛选某次核验、查看超时原因，以及临时开启脱敏的模型输出片段。
-
-## 目录
+## Project layout
 
 ```text
 src/crosscheck/
-  api/          HTTP 路由
-  domain/       领域模型和接口协议
-  providers/    Exa、Firecrawl、Mock 适配器
-  services/     编排、来源去重、证据判断
+  api/          HTTP routes
+  domain/       Data models and provider protocols
+  ml/           Local classifier and training scripts
+  providers/    Exa, Firecrawl, and mock adapters
+  services/     Verification workflow and evidence assessment
+  static/       Workspace interface
+  storage/      Saved verification reports
 ```
+
+See [UI design notes](DESIGN.md) for the workspace's visual system.

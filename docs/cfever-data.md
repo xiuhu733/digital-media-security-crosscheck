@@ -1,26 +1,24 @@
-# CFEVER 外部训练数据
+# CFEVER training data
 
-## 内容
+## Source data
 
-CFEVER 是中文事实核查数据集，原始训练集 24,012 条，开发集 3,000 条。每条记录包含主张、三分类标签和 Wikipedia 页面/句子编号形式的证据引用。本目录还保存了 24 个 Wikipedia 证据分片，用于把引用还原为实际句子。
+CFEVER is a Chinese fact-checking dataset with 24,012 training records and 3,000 development records. Each record contains a claim, one of three labels, and evidence references expressed as Wikipedia page titles and sentence IDs. The local import workflow uses 24 Wikipedia evidence shards to resolve those references into text.
 
-原始数据来源：
+- [Dataset home](https://ikmlab.github.io/CFEVER/)
+- [Hugging Face dataset](https://huggingface.co/datasets/IKMLab-team/cfever)
+- [Paper](https://doi.org/10.1609/aaai.v38i17.29825)
 
-- 数据集主页：<https://ikmlab.github.io/CFEVER/>
-- Hugging Face：<https://huggingface.co/datasets/IKMLab-team/cfever>
-- 论文：<https://doi.org/10.1609/aaai.v38i17.29825>
+Check the source dataset's `LICENSE` and `README.md` for its terms. Wikipedia content also carries copyright and attribution obligations. Raw data and converted samples are under `data/`, which is excluded from this Git repository.
 
-原始数据的许可说明见数据集仓库的 `LICENSE` 和 `README.md`。数据包含 Wikipedia 内容，使用和再分发时还要遵守 Wikipedia 的版权和署名要求。
+## Convert evidence references
 
-## 转换后的文件
-
-`relation_training.jsonl` 是项目训练器使用的格式：
+The converter writes one JSON object per line with a claim, evidence text, label, source group, and metadata. This record illustrates the format; it is not quoted from the dataset:
 
 ```json
-{"claim":"……","evidence":"……","label":"supports|refutes|insufficient","group":"cfever-pages:……","metadata":{"source":"CFEVER"}}
+{"claim":"北京是中国的首都","evidence":"北京是中华人民共和国的首都。","label":"supports","group":"cfever-pages:北京","metadata":{"source":"CFEVER"}}
 ```
 
-转换命令：
+After obtaining the source files under `data/external/cfever/`, run:
 
 ```bash
 ./.venv/bin/python -m crosscheck.ml.import_cfever \
@@ -30,9 +28,9 @@ CFEVER 是中文事实核查数据集，原始训练集 24,012 条，开发集 3
   --output data/external/cfever/relation_training.jsonl
 ```
 
-CFEVER 的 `NOT ENOUGH INFO` 记录没有金标准证据句。转换脚本从同一领域的其他页面选取一个非目标页面作为构造的 `insufficient` 负例，并在 `metadata.constructed_insufficient` 中标记为 `true`。这些样本适合训练初始分类器，但不应被当成原始人工证据标注；最终评估应使用独立人工标注集。
+CFEVER's `NOT ENOUGH INFO` records have no gold evidence sentence. The converter selects a passage from another page in the same domain as constructed negative evidence and marks it with `metadata.constructed_insufficient: true`. These examples are useful for an initial classifier but are not original, manually annotated evidence pairs. Final evaluation needs an independent, manually labeled set.
 
-## 训练和评估
+## Train and evaluate
 
 ```bash
 ./.venv/bin/python -m crosscheck.ml.train \
@@ -41,4 +39,4 @@ CFEVER 的 `NOT ENOUGH INFO` 记录没有金标准证据句。转换脚本从同
   --report models/evidence_relation_cfever_metrics.json
 ```
 
-当前转换结果为 27,012 条：支持 12,085 条、反驳 8,113 条、证据不足 6,814 条。当前来源级留出评估的 Macro-F1 为 0.687；该数字包含构造的证据不足负例，只能作为当前基线。
+The current conversion produced 27,012 pairs: 12,085 `supports`, 8,113 `refutes`, and 6,814 `insufficient`. The [saved evaluation](../models/evidence_relation_cfever_metrics.json) reports 0.673 accuracy and 0.687 macro F1 on 5,524 group-held-out pairs. Because the evaluation includes constructed `insufficient` examples and Wikipedia sentences rather than live web pages, treat these figures as a baseline for this dataset, not as live-web accuracy.
